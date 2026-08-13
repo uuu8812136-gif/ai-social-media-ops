@@ -1,0 +1,102 @@
+# Celery worker 镜像：在 backend 基础上追加 Xvfb + x11vnc + openbox + websockify + noVNC，
+# 让 Playwright 以 headless=False 模式跑在 Xvfb :99 上，并通过 x11vnc + websockify 暴露给 noVNC。
+# 用户在前端 noVNC 看到的是 worker 当前正在操作的抖音/小红书页面（共享 worker 浏览器方案 A）。
+
+FROM python:3.12-slim-bookworm@sha256:d50fb7611f86d04a3b0471b46d7557818d88983fc3136726336b2a4c657aa30b AS builder
+
+WORKDIR /app
+
+RUN set -eux; \
+    sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources; \
+    apt-get -o Acquire::Retries=5 update; \
+    apt-get -o Acquire::Retries=5 install -y --no-install-recommends gcc libpq-dev; \
+    rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+ARG PIP_INDEX_URL=https://pypi.org/simple
+RUN pip install --no-cache-dir --index-url "${PIP_INDEX_URL}" -r requirements.txt && pip check
+
+COPY . .
+
+FROM python:3.12-slim-bookworm@sha256:d50fb7611f86d04a3b0471b46d7557818d88983fc3136726336b2a4c657aa30b
+
+WORKDIR /app
+
+# 系统依赖：PostgreSQL 客户端 + Playwright Chromium 运行时库
+# + Xvfb / x11vnc / openbox / websockify / noVNC（方案 A 远程浏览器）
+ARG DEBIAN_MIRROR=
+RUN set -eux; \
+    sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources; \
+    if [ -n "${DEBIAN_MIRROR}" ]; then \
+      sed -i \
+        -e "s|https://deb.debian.org/debian-security|${DEBIAN_MIRROR}/debian-security|g" \
+        -e "s|https://deb.debian.org/debian|${DEBIAN_MIRROR}/debian|g" \
+        /etc/apt/sources.list.d/debian.sources; \
+    fi; \
+    apt-get -o Acquire::Retries=5 update; \
+    attempt=1; \
+    while ! apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
+        libpq5 curl ffmpeg \
+        libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
+        libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 \
+        libgbm1 libpango-1.0-0 libcairo2 libasound2 libatspi2.0-0 \
+        xvfb x11vnc openbox xauth xfonts-base x11-utils procps ca-certificates git \
+        fontconfig fonts-noto-cjk fonts-noto-color-emoji; do \
+      if [ "$attempt" -ge 5 ]; then exit 1; fi; \
+      attempt=$((attempt + 1)); \
+      apt-get -o Acquire::Retries=5 update; \
+    done; \
+    rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
+
+ENV PYTHONPATH=/app
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+ARG PLAYWRIGHT_DOWNLOAD_HOST=
+
+RUN set -eux; \
+    mkdir -p /ms-playwright; \
+    if [ -n "${PLAYWRIGHT_DOWNLOAD_HOST}" ]; then \
+        PLAYWRIGHT_DOWNLOAD_HOST="${PLAYWRIGHT_DOWNLOAD_HOST}" python -m playwright install chromium --no-shell; \
+    else \
+        python -m playwright install chromium --no-shell; \
+    fi; \
+    chmod -R 775 /ms-playwright
+
+# websockify 单独装在 worker 镜像（不在 backend 镜像）
+RUN pip install --no-cache-dir websockify==0.13.0
+
+# noVNC 官方稳定版；固定 Release，避免 master 更新造成无提示的行为变化。
+ARG NOVNC_VERSION=v1.7.0
+RUN set -eux; \
+    attempt=1; \
+    until git clone --depth=1 --branch "${NOVNC_VERSION}" https://github.com/novnc/noVNC.git /opt/novnc; do \
+      rm -rf /opt/novnc; \
+      if [ "$attempt" -ge 5 ]; then exit 1; fi; \
+      attempt=$((attempt + 1)); \
+      sleep 2; \
+    done; \
+    rm -rf /opt/novnc/.git
+
+# 业务代码放在稳定依赖层之后，日常代码更新不再重复访问 GitHub。
+COPY --from=builder /app /app
+
+# headless=False 模式下用普通 Chromium 即可（不再依赖 chromium_headless_shell）
+RUN python -c "from app.integrations.synapse_engine.utils.playwright_provider import assert_chromium_ready; exe=assert_chromium_ready(headless=False); print(f'Playwright Chromium executable: {exe}')"
+
+COPY entrypoint.sh /entrypoint.sh
+COPY entrypoint-worker.sh /entrypoint-worker.sh
+RUN chmod +x /entrypoint.sh /entrypoint-worker.sh
+
+RUN useradd -m -u 1001 appuser && chown -R appuser:appuser /app /entrypoint.sh /entrypoint-worker.sh /ms-playwright /opt/novnc
+USER appuser
+
+ENV DISPLAY=:99
+ENV SYNAPSE_PLAYWRIGHT_HEADLESS=false
+
+EXPOSE 5901 6080
+
+ENTRYPOINT ["/entrypoint-worker.sh"]

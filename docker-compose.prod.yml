@@ -1,0 +1,23 @@
+# Production-only network exposure policy. Use together with docker-compose.yml.
+# Compose v2.24+ supports !reset/!override merge tags.
+services:
+  postgres:
+    ports: !reset []
+    networks: !override [data_net]
+
+  redis:
+    ports: !reset []
+    networks: !override [data_net]
+
+  minio:
+    ports: !reset []
+    networks: !override [data_net]
+
+  backend:
+    ports: !reset []
+
+  celery:
+    ports: !reset []
+
+  frontend:
+    ports: !reset []

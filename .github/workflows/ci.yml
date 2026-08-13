@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ai_social_media
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d ai_social_media"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      APP_ENV: test
+      APP_SECRET_KEY: ci-secret-key-not-for-production
+      PHONE_ENCRYPTION_KEY: ci-phone-key-not-for-production
+      COOKIE_ENCRYPTION_KEY: ci-cookie-key-not-for-production
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/ai_social_media
+      REDIS_URL: redis://127.0.0.1:6379/0
+      ALLOWED_HOSTS: health.internal,test,localhost,127.0.0.1
+      CORS_ORIGINS: http://127.0.0.1:4173
+      HEALTHCHECK_HOST: health.internal
+      BOOTSTRAP_ADMIN_ENABLED: "true"
+      SEED_ADMIN_PASSWORD: admin123
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
+      - run: pip install -r requirements-dev.txt
+      - run: alembic upgrade head
+      - run: python -c "import asyncio; from app.core.seed import seed_data; asyncio.run(seed_data())"
+      - run: python -m pytest -q
+      - run: ruff check app tests
+      - run: bandit -q -lll -r app
+      - run: pip-audit -r requirements.txt
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm audit --omit=dev
+      - run: npm test
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+
+  containers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cp .env.example .env
+      - run: docker compose config --quiet
+      - run: docker compose build backend frontend

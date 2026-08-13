@@ -1,0 +1,313 @@
+:root {
+  --wm-primary: #0f6bc5;
+  --wm-primary-dark: #0a4d8f;
+  --wm-primary-light: #3b9eff;
+  --wm-accent: #f59e0b;
+  --wm-surface: #ffffff;
+  --wm-surface-subtle: #f0f3f7;
+  --wm-bg: #f5f7fa;
+
+  --color-ink: #1a2332;
+  --color-ink-secondary: #4a5568;
+  --color-ink-tertiary: #718096;
+  --color-border: #e2e8f0;
+  --color-accent: #0f6bc5;
+  --color-success: #0d9668;
+  --color-warning: #d97706;
+  --color-danger: #dc2626;
+  --color-purple: #8b5cf6;
+  --color-info: #0891b2;
+
+  --shadow-xs: 0 1px 2px rgba(0, 21, 41, 0.04);
+  --shadow-sm: 0 1px 4px rgba(0, 21, 41, 0.08);
+  --shadow-md: 0 2px 8px rgba(0, 21, 41, 0.12);
+
+  --radius-sm: 8px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  --transition-fast: 0.15s ease;
+  --transition-base: 0.2s ease;
+}
+
+/* ===== 轻量页面进入动画（保留单次，不叠加 stagger）===== */
+@keyframes pageFadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.page-enter { animation: pageFadeIn 0.25s ease-out; }
+
+/* ===== 页面头部 ===== */
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.page-header h2 {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--color-ink);
+  letter-spacing: -0.01em;
+  margin: 0 0 4px;
+}
+.page-header .subtitle,
+.page-sub {
+  font-size: 13px;
+  color: var(--color-ink-tertiary);
+  margin-top: 2px;
+}
+
+/* ===== 统一 page-guide 提示条 ===== */
+.page-guide {
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  background: var(--wm-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  color: var(--color-ink-secondary);
+  line-height: 1.6;
+}
+
+/* ===== stat-card — 彩色指标卡（克制 hover，不位移放大）===== */
+.stat-card {
+  position: relative;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  transition: box-shadow var(--transition-base);
+  padding: 22px 18px;
+  text-align: center;
+  background: var(--wm-surface);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-xs);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 110px;
+}
+.stat-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+}
+/* 伪元素不遮文字：value/label 提高 z-index */
+.stat-card .stat-value,
+.stat-card .stat-label {
+  position: relative;
+  z-index: 1;
+}
+.stat-card:hover {
+  box-shadow: var(--shadow-sm);
+}
+.stat-card .stat-value {
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+.stat-card .stat-label {
+  font-size: 13px;
+  font-weight: 500;
+  margin-top: 6px;
+  color: var(--color-ink-tertiary);
+}
+
+.stat-card--blue {
+  background: linear-gradient(145deg, #f0f7ff 0%, #e0effd 100%);
+  border-color: rgba(15, 107, 197, 0.18);
+}
+.stat-card--blue::before { background: linear-gradient(90deg, #0f6bc5, #3b9eff); }
+.stat-card--blue .stat-value { color: #0f6bc5; }
+
+.stat-card--green {
+  background: linear-gradient(145deg, #f0fdf6 0%, #dcfce9 100%);
+  border-color: rgba(13, 150, 104, 0.18);
+}
+.stat-card--green::before { background: linear-gradient(90deg, #0d9668, #34d399); }
+.stat-card--green .stat-value { color: #0d9668; }
+
+.stat-card--amber,
+.stat-card--orange {
+  background: linear-gradient(145deg, #fffbeb 0%, #fef3c7 100%);
+  border-color: rgba(217, 119, 6, 0.18);
+}
+.stat-card--amber::before,
+.stat-card--orange::before { background: linear-gradient(90deg, #d97706, #fbbf24); }
+.stat-card--amber .stat-value,
+.stat-card--orange .stat-value { color: #d97706; }
+
+.stat-card--purple {
+  background: linear-gradient(145deg, #faf5ff 0%, #ede9fe 100%);
+  border-color: rgba(124, 58, 237, 0.18);
+}
+.stat-card--purple::before { background: linear-gradient(90deg, #8b5cf6, #a78bfa); }
+.stat-card--purple .stat-value { color: #7c3aed; }
+
+/* ===== panel-card ===== */
+.panel-card {
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--wm-surface);
+  box-shadow: var(--shadow-xs);
+  overflow: hidden;
+}
+.panel-card:hover {
+  box-shadow: var(--shadow-sm);
+}
+.panel-card__header {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--color-border);
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--color-ink);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* ===== content-card ===== */
+.content-card {
+  border-radius: var(--radius-sm);
+  margin-bottom: 12px;
+  border: 1px solid var(--color-border);
+  background: var(--wm-surface);
+  transition: border-color var(--transition-base), box-shadow var(--transition-base);
+  position: relative;
+  overflow: hidden;
+}
+.content-card::after {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: transparent;
+  transition: background var(--transition-base);
+}
+.content-card:hover {
+  border-color: rgba(15, 107, 197, 0.25);
+  box-shadow: var(--shadow-xs);
+}
+.content-card:hover::after {
+  background: linear-gradient(180deg, var(--wm-primary-light), var(--wm-primary));
+}
+
+/* ===== workflow steps ===== */
+.workflow-steps {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 14px 0;
+  align-items: center;
+}
+.workflow-step {
+  padding: 5px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  transition: all var(--transition-fast);
+  border: 1px solid transparent;
+  background: var(--wm-surface-subtle);
+  color: var(--color-ink-tertiary);
+}
+.workflow-step.active {
+  background: rgba(15, 107, 197, 0.08);
+  color: var(--wm-primary);
+  border-color: rgba(15, 107, 197, 0.25);
+}
+.workflow-step.done {
+  background: rgba(13, 150, 104, 0.08);
+  color: #0d9668;
+  border-color: rgba(13, 150, 104, 0.2);
+}
+
+/* ===== 线索池标签 ===== */
+.pool-tag-consumer { --el-tag-bg-color: rgba(15, 107, 197, 0.08); --el-tag-text-color: #0f6bc5; }
+.pool-tag-franchise { --el-tag-bg-color: rgba(217, 119, 6, 0.08); --el-tag-text-color: #d97706; }
+.pool-tag-local { --el-tag-bg-color: rgba(13, 150, 104, 0.08); --el-tag-text-color: #0d9668; }
+
+/* ===== 趋势条 ===== */
+.trend-bar {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--wm-surface-subtle);
+  overflow: hidden;
+}
+.trend-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--wm-primary), var(--wm-primary-light));
+  transition: width 0.4s ease-out;
+}
+
+/* ===== 表格行稳定：不做行进入动画，hover 仅轻微底色 ===== */
+.el-table { transition: opacity 0.2s ease; }
+.el-table__row { transition: background-color var(--transition-fast); }
+
+/* ===== 标签稳定：不弹跳 ===== */
+.el-tag { transition: none; }
+.el-tag:hover { transform: none; }
+
+/* ===== 按钮按下反馈（轻微）===== */
+.el-button:active { transform: scale(0.98); }
+
+/* ===== 轻量软 hover（仅显式使用 .soft-hover）===== */
+.soft-hover { transition: box-shadow var(--transition-base), border-color var(--transition-base); }
+.soft-hover:hover { box-shadow: var(--shadow-sm); border-color: rgba(15, 107, 197, 0.25); }
+
+/* ===== 路由淡入 ===== */
+.route-fade-enter-active { animation: pageFadeIn 0.25s ease-out; }
+.route-fade-leave-active { transition: opacity 0.12s ease; }
+.route-fade-leave-to { opacity: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .page-enter, .route-fade-enter-active { animation: none !important; }
+  .stat-card, .panel-card, .content-card, .trend-bar-fill { transition: none !important; }
+}
+
+
+/* ===== 规范对齐：白色内容卡片（Antd Content 风格）===== */
+.page-content-card {
+  margin: 0;
+  padding: 24px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: var(--shadow-xs);
+  min-height: calc(100vh - 80px);
+}
+
+/* ===== 规范对齐：Antd 风格表格头（浅灰底、无重边框）===== */
+.el-table {
+  --el-table-border-color: #f0f0f0;
+  --el-table-header-bg-color: #fafafa;
+  --el-table-row-hover-bg-color: #f5f7fa;
+}
+.el-table th.el-table__cell {
+  background: #fafafa !important;
+  font-weight: 600;
+  color: var(--color-ink-secondary);
+}
+
+/* ===== 规范对齐：Antd 风格按钮（干净描边、统一高度）===== */
+.el-button--default {
+  border-color: #d9d9d9;
+  color: var(--color-ink-secondary);
+}
+.el-button--default:hover {
+  border-color: var(--wm-primary);
+  color: var(--wm-primary);
+  background: #fff;
+}
+
+/* ===== 规范对齐：Antd 风格分页 ===== */
+.el-pagination.is-background .el-pager li:not(.is-active) {
+  background: #fff;
+  border: 1px solid #d9d9d9;
+}
+.el-pagination.is-background .el-pager li.is-active {
+  background: var(--wm-primary);
+  border-color: var(--wm-primary);
+}

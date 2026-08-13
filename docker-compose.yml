@@ -1,0 +1,307 @@
+name: ${COMPOSE_PROJECT_NAME:-ai-social-media}
+
+# 公共日志配置锚点
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-app-dns: &app-dns
+  - 223.5.5.5
+  - 119.29.29.29
+  - 114.114.114.114
+  - 8.8.8.8
+
+services:
+  volume-init:
+    image: alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce
+    user: "0:0"
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        chown -R 1001:1001 /data/synapse /data/browser_profiles /data/mediacrawler
+        find /data/synapse /data/browser_profiles /data/mediacrawler -type d -exec chmod 700 {} +
+    volumes:
+      - synapse_data:/data/synapse
+      - browser_profiles:/data/browser_profiles
+      - mediacrawler_data:/data/mediacrawler
+    network_mode: none
+    restart: "no"
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    cap_add: ["CHOWN", "DAC_OVERRIDE", "FOWNER"]
+    logging: *default-logging
+
+  postgres:
+    image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-ai_social_media}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5434}:5432"   # 仅本地访问，生产可移除
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-ai_social_media}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    stop_grace_period: 30s
+    networks: [data_net, host_net]
+    logging: *default-logging
+
+  redis:
+    image: redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        if [ -n "$${REDIS_PASSWORD}" ]; then
+          exec redis-server --appendonly yes --requirepass "$${REDIS_PASSWORD}"
+        fi
+        exec redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "127.0.0.1:${REDIS_HOST_PORT:-6380}:6379"   # 仅本地访问，生产可移除
+    healthcheck:
+      test: ["CMD-SHELL", "if [ -n \"$$REDIS_PASSWORD\" ]; then redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping; else redis-cli ping; fi"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    stop_grace_period: 20s
+    networks: [data_net, host_net]
+    logging: *default-logging
+
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+    volumes:
+      - minio_data:/data
+    ports:
+      - "127.0.0.1:${MINIO_HOST_PORT:-9002}:9000"   # S3 API，仅本地访问
+      - "127.0.0.1:${MINIO_CONSOLE_HOST_PORT:-9003}:9001"   # 管理控制台，仅本地访问
+    # minio 镜像无 curl/wget，依赖 backend 健康检查间接探测
+    restart: unless-stopped
+    stop_grace_period: 30s
+    networks: [data_net, host_net]
+    logging: *default-logging
+
+  # elasticsearch:  # 暂时注释，代码未接入，节省资源
+  #   image: docker.elastic.co/elasticsearch/elasticsearch:8.16.0
+  #   environment:
+  #     - discovery.type=single-node
+  #     - xpack.security.enabled=false
+  #     - ES_JAVA_OPTS=-Xms512m -Xmx512m
+  #   volumes:
+  #     - es_data:/usr/share/elasticsearch/data
+  #   ports:
+  #     - "127.0.0.1:9201:9200"
+
+  backend:
+    build: ./backend
+    dns: *app-dns
+    env_file: .env
+    environment:
+      HEALTHCHECK_HOST: ${HEALTHCHECK_HOST:-health.internal}
+      SYNAPSE_LOGIN_BROWSER_MODE: ${SYNAPSE_LOGIN_BROWSER_MODE:-native_host}
+      SYNAPSE_PUBLISH_BROWSER_MODE: ${SYNAPSE_PUBLISH_BROWSER_MODE:-native_host}
+      SYNAPSE_NATIVE_BROWSER_SHARED_MEDIA_DIR: ${SYNAPSE_NATIVE_BROWSER_SHARED_MEDIA_DIR:-/tmp/ai-social-native-media}
+      SYNAPSE_NATIVE_BROWSER_MANAGER_URL: http://host.docker.internal:${NATIVE_BROWSER_BRIDGE_PORT:-9324}
+      SYNAPSE_NATIVE_BROWSER_MANAGER_TOKEN: ${SYNAPSE_NATIVE_BROWSER_MANAGER_TOKEN:-ai-social-native-bridge-local}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      volume-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    ports:
+      - "127.0.0.1:${BACKEND_HOST_PORT:-8001}:8000"   # 仅本地调试，生产走 nginx
+    volumes:
+      - synapse_data:/app/data/synapse
+      - browser_profiles:/app/data/browser_profiles
+      - mediacrawler_data:/app/data/mediacrawler
+    # 不再 bind mount 源码，使用镜像内打包代码（生产模式）
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -H \"Host: $${HEALTHCHECK_HOST}\" http://127.0.0.1:8000/health/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    restart: unless-stopped
+    stop_grace_period: 30s
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    networks: [app_net, data_net]
+    logging: *default-logging
+
+  celery:
+    # 方案 A：celery worker 容器内跑 Xvfb + x11vnc + websockify + noVNC
+    # Playwright 以 headless=False 跑在 Xvfb :99 上，用户通过 noVNC 看到 worker 当前操作的页面
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.worker
+    user: "1001:1001"
+    dns: *app-dns
+    command: >-
+      celery -A app.tasks.celery_app worker --loglevel=info -E
+      -Q default --concurrency=${CELERY_DEFAULT_CONCURRENCY:-2}
+      -n default@%h
+    env_file: .env
+    environment:
+      HEALTHCHECK_HOST: ${HEALTHCHECK_HOST:-health.internal}
+      DISPLAY: ":99"
+      SYNAPSE_PLAYWRIGHT_HEADLESS: "false"
+      SYNAPSE_PUBLISH_BROWSER_MODE: ${SYNAPSE_PUBLISH_BROWSER_MODE:-native_host}
+      SYNAPSE_NATIVE_BROWSER_SHARED_MEDIA_DIR: ${SYNAPSE_NATIVE_BROWSER_SHARED_MEDIA_DIR:-/tmp/ai-social-native-media}
+      SYNAPSE_NATIVE_BROWSER_MANAGER_URL: http://host.docker.internal:${NATIVE_BROWSER_BRIDGE_PORT:-9324}
+      SYNAPSE_NATIVE_BROWSER_MANAGER_TOKEN: ${SYNAPSE_NATIVE_BROWSER_MANAGER_TOKEN:-ai-social-native-bridge-local}
+      SYNAPSE_VERIFICATION_WORKER_VNC_PASSWORD: ${SYNAPSE_VERIFICATION_WORKER_VNC_PASSWORD:-trae-vnc-2026}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - synapse_data:/app/data/synapse
+      - browser_profiles:/app/data/browser_profiles
+      - mediacrawler_data:/app/data/mediacrawler
+      # 宿主 Chrome 与 celery 使用相同绝对路径，支持大视频直接上传。
+      - type: bind
+        source: ${SYNAPSE_NATIVE_BROWSER_SHARED_MEDIA_DIR:-/tmp/ai-social-native-media}
+        target: ${SYNAPSE_NATIVE_BROWSER_SHARED_MEDIA_DIR:-/tmp/ai-social-native-media}
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.tasks.celery_app inspect ping -d default@$$HOSTNAME || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    stop_grace_period: 60s
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    networks: [app_net, data_net]
+    logging: *default-logging
+
+  celery-publish:
+    extends:
+      service: celery
+    # 发布/授权共用宿主 Chrome，会产生外部写入；保持单并发防止页面相互抢占。
+    command: >-
+      celery -A app.tasks.celery_app worker --loglevel=info -E
+      -Q publish --concurrency=${CELERY_PUBLISH_CONCURRENCY:-1}
+      -n publish@%h
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.tasks.celery_app inspect ping -d publish@$$HOSTNAME || exit 1"]
+
+  celery-crawl:
+    extends:
+      service: celery
+    command: >-
+      celery -A app.tasks.celery_app worker --loglevel=info -E
+      -Q crawl --concurrency=${CELERY_CRAWL_CONCURRENCY:-1}
+      -n crawl@%h
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.tasks.celery_app inspect ping -d crawl@$$HOSTNAME || exit 1"]
+
+  celery-beat:
+    extends:
+      service: celery
+    command: >-
+      celery -A app.tasks.celery_app beat --loglevel=info
+      --schedule=/tmp/celerybeat-schedule
+    healthcheck:
+      test: ["NONE"]
+
+  frontend:
+    build: ./frontend
+    depends_on:
+      - backend
+    ports:
+      - "127.0.0.1:${FRONTEND_HOST_PORT:-5174}:80"   # 仅本地调试
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    networks: [app_net, data_net]
+    logging: *default-logging
+
+  browser-vnc:
+    profiles: ["legacy-vnc"]
+    build: ./browser-vnc
+    dns: *app-dns
+    environment:
+      MAX_SESSIONS: ${VNC_MAX_SESSIONS:-5}
+    volumes:
+      - vnc_tokens:/run
+    restart: unless-stopped
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9223/healthz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks: [app_net]
+    logging: *default-logging
+
+  nginx:
+    build: ./nginx
+    ports:
+      - "${APP_BIND_HOST:-127.0.0.1}:${APP_HTTP_PORT:-8080}:80"
+      # - "443:443"   # 生产 HTTPS 时取消注释
+    # 生产 HTTPS 证书建议由宿主反向代理/负载均衡终止；若在本容器终止，
+    # 请通过生产专用 Compose override 只读挂载证书目录。
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+    stop_grace_period: 20s
+    security_opt: ["no-new-privileges:true"]
+    networks: [app_net, data_net]
+    logging: *default-logging
+
+volumes:
+  pg_data:
+  redis_data:
+  minio_data:
+  synapse_data:
+  browser_profiles:
+  mediacrawler_data:
+  vnc_tokens:
+
+networks:
+  app_net:
+  # 仅数据服务加入，用于本地 127.0.0.1 端口映射；生产应移除对应 ports。
+  host_net:
+  data_net:
+    internal: true

@@ -1,0 +1,75 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+!.env.*.example
+!.env.sample
+!.env.*.sample
+!.env.template
+!.env.*.template
+
+# Dependencies and caches
+node_modules/
+.pnpm-store/
+.yarn/
+vendor/
+.venv/
+venv/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.cache/
+
+# Generated output
+dist/
+build/
+target/
+.next*/
+coverage/
+artifacts/
+outputs/
+test-artifacts/
+test-results/
+playwright-report/
+logs/
+*.log
+
+# Private data and backups
+backups/
+backup/
+uploads/
+*.db
+*.sqlite
+*.sqlite3
+*.dump
+*.bak
+
+# Local tooling and browser state
+.idea/
+.vscode/
+.trae/
+.codex/
+.cursor/
+.claude/
+.playwright-mcp/
+browser-profile/
+chrome-profile/
+user-data-dir/
+cookies/
+.DS_Store
+._*
+
+# Archives and platform binaries
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.7z
+*.rar
+*.exe
+*.dll
+*.dylib
+*.so
+*.dmg
+*.pkg

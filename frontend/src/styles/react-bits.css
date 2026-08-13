@@ -1,0 +1,148 @@
+/* ===== 克制后台动效系统（参考 react-bits 视觉，转 Vue/CSS 可用）=====
+ * 设计原则：
+ *  - 后台优先：信息密度、清晰状态、可操作，不是落地页
+ *  - 玻璃只用于少量容器（.glass-card--subtle），不全站玻璃
+ *  - 不大面积渐变文字，不夸张 hover 位移/旋转/发光
+ *  - 表格稳定可读，不做行进入动画
+ *  - 全部 reduced-motion 兼容
+ */
+
+/* ===== 颜色锚点 ===== */
+:root {
+  --rb-blue: #0f6bc5;
+  --rb-blue-light: #3b9eff;
+  --rb-purple: #8b5cf6;
+  --rb-pink: #ec4899;
+}
+
+/* ===== 灰色滚动条（全局，含表格/抽屉/页面）===== */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.18); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(0, 0, 0, 0.35); }
+::-webkit-scrollbar-corner { background: transparent; }
+* { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
+.aside::-webkit-scrollbar { width: 4px; }
+.aside::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.12); border-radius: 2px; }
+.aside::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.22); }
+
+/* ===== 轻量进入动画（仅首次渲染，stagger 间隔小）===== */
+@keyframes rb-fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes rb-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.rb-enter       { animation: rb-fade-up 0.28s ease-out both; }
+.rb-enter-fade  { animation: rb-fade-in 0.25s ease-out both; }
+.rb-delay-1 { animation-delay: 0.04s; }
+.rb-delay-2 { animation-delay: 0.08s; }
+.rb-delay-3 { animation-delay: 0.12s; }
+.rb-delay-4 { animation-delay: 0.16s; }
+
+/* ===== 轻量玻璃容器（仅显式使用 .glass-card--subtle）===== */
+.glass-card--subtle {
+  background: rgba(255, 255, 255, 0.78) !important;
+  backdrop-filter: blur(8px) saturate(140%);
+  -webkit-backdrop-filter: blur(8px) saturate(140%);
+  border: 1px solid var(--color-border-light, #edf2f7) !important;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04) !important;
+}
+/* 兼容旧 .glass-card 引用：降级为普通白卡，不再全站玻璃 */
+.glass-card {
+  background: #ffffff !important;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: 1px solid var(--color-border, #e2e8f0) !important;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04) !important;
+}
+.glass-card::before { display: none; }
+.glass-card:hover {
+  transform: none !important;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06) !important;
+  border-color: var(--color-border, #e2e8f0) !important;
+}
+
+/* ===== 滚动揭示（IntersectionObserver 触发）===== */
+.rb-reveal {
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+.rb-reveal.rb-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ===== 脉冲圆点（在线/状态指示）===== */
+@keyframes rb-pulse-ring {
+  0%   { transform: scale(0.8); opacity: 1; }
+  100% { transform: scale(2.4); opacity: 0; }
+}
+.rb-pulse-dot {
+  position: relative;
+  display: inline-block;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--color-success, #0d9668);
+  box-shadow: 0 0 6px rgba(13, 150, 104, 0.5);
+}
+.rb-pulse-dot::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: inherit;
+  animation: rb-pulse-ring 1.8s ease-out infinite;
+}
+
+/* ===== 骨架屏闪烁 ===== */
+@keyframes rb-skeleton {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.rb-skeleton {
+  background: linear-gradient(90deg, #f0f3f7 25%, #e2e8f0 50%, #f0f3f7 75%);
+  background-size: 200% 100%;
+  animation: rb-skeleton 1.5s ease-in-out infinite;
+}
+
+/* ===== 路由切换转场（轻量）===== */
+@keyframes rb-page-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.rb-page-enter-active { animation: rb-page-enter 0.25s ease-out; }
+
+/* ===== Reduced motion ===== */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .rb-reveal { opacity: 1 !important; transform: none !important; }
+}
+
+/* ===== 圆角兜底（Element Plus 组件，避免直角）===== */
+.el-button { border-radius: 8px !important; }
+.el-input__wrapper { border-radius: 8px !important; }
+.el-select .el-input__wrapper { border-radius: 8px !important; }
+.el-textarea__inner { border-radius: 8px !important; }
+.el-card { border-radius: 8px !important; }
+.el-dialog { border-radius: 8px !important; }
+.el-tag { border-radius: 6px !important; }
+.el-tabs__item { border-radius: 8px 8px 0 0 !important; }
+.el-menu-item { border-radius: 8px !important; }
+.el-pagination button { border-radius: 6px !important; }
+.el-pagination .el-pager li { border-radius: 6px !important; }
+.el-empty { border-radius: 8px !important; }
+.el-alert { border-radius: 10px !important; }
+.el-message-box { border-radius: 8px !important; }
+.el-select-dropdown { border-radius: 10px !important; }
+.el-popper { border-radius: 10px !important; }
+.el-progress-bar__outer { border-radius: 999px !important; }
+.el-progress-bar__inner { border-radius: 999px !important; }
